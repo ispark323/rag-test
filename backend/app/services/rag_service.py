@@ -1,18 +1,17 @@
 from typing import List, Dict, Optional
 import uuid
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Qdrant
+from langchain_community.vectorstores import Milvus
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from pymilvus import connections, utility, Collection, CollectionSchema, FieldSchema, DataType
 
 from app.config import settings
 
 
 class RAGService:
-    """Service for RAG operations using LangChain, Qdrant, and OpenAI."""
+    """Service for RAG operations using LangChain, Milvus, and OpenAI."""
 
     def __init__(self):
         """Initialize RAG service with embeddings, vector store, and LLM."""
@@ -22,20 +21,24 @@ class RAGService:
             openai_api_key=settings.openai_api_key
         )
 
-        # Initialize Qdrant client
-        self.qdrant_client = QdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port
+        # Initialize Milvus connection
+        connections.connect(
+            alias="default",
+            host=settings.milvus_host,
+            port=settings.milvus_port
         )
 
         # Initialize collection if not exists
         self._initialize_collection()
 
-        # Initialize LangChain Qdrant vector store
-        self.vector_store = Qdrant(
-            client=self.qdrant_client,
-            collection_name=settings.qdrant_collection_name,
-            embeddings=self.embeddings
+        # Initialize LangChain Milvus vector store
+        self.vector_store = Milvus(
+            embedding_function=self.embeddings,
+            collection_name=settings.milvus_collection_name,
+            connection_args={
+                "host": settings.milvus_host,
+                "port": settings.milvus_port
+            }
         )
 
         # Initialize LLM (한국어 지원)
@@ -69,17 +72,32 @@ class RAGService:
         )
 
     def _initialize_collection(self):
-        """Initialize Qdrant collection if it doesn't exist."""
+        """Initialize Milvus collection if it doesn't exist."""
         try:
-            collections = self.qdrant_client.get_collections().collections
-            collection_names = [col.name for col in collections]
+            collection_name = settings.milvus_collection_name
 
-            if settings.qdrant_collection_name not in collection_names:
-                # Create collection with OpenAI embedding dimensions (1536 for text-embedding-3-small)
-                self.qdrant_client.create_collection(
-                    collection_name=settings.qdrant_collection_name,
-                    vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
-                )
+            # Check if collection exists
+            if not utility.has_collection(collection_name):
+                # Define schema for the collection
+                fields = [
+                    FieldSchema(name="pk", dtype=DataType.VARCHAR, is_primary=True, max_length=100),
+                    FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
+                    FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=1536)
+                ]
+                schema = CollectionSchema(fields=fields, description="RAG documents collection")
+
+                # Create collection
+                collection = Collection(name=collection_name, schema=schema)
+
+                # Create IVF_FLAT index for vector field
+                index_params = {
+                    "metric_type": "L2",
+                    "index_type": "IVF_FLAT",
+                    "params": {"nlist": 1024}
+                }
+                collection.create_index(field_name="vector", index_params=index_params)
+
+                print(f"Created collection: {collection_name}")
         except Exception as e:
             print(f"Error initializing collection: {e}")
 
@@ -90,7 +108,6 @@ class RAGService:
     ) -> str:
         """
         Upload and index a document.
-
         Args:
             text: Document text (supports Korean)
             metadata: Optional metadata for the document
@@ -165,9 +182,9 @@ class RAGService:
 
     async def delete_collection(self):
         """Delete the entire collection (useful for testing/reset)."""
-        self.qdrant_client.delete_collection(
-            collection_name=settings.qdrant_collection_name
-        )
+        collection_name = settings.milvus_collection_name
+        if utility.has_collection(collection_name):
+            utility.drop_collection(collection_name)
         self._initialize_collection()
 
 

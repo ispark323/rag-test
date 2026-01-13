@@ -13,10 +13,10 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
 
-    # Qdrant
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
-    qdrant_collection_name: str = "rag_documents"
+    # Milvus
+    milvus_host: str = "localhost"
+    milvus_port: int = 19530
+    milvus_collection_name: str = "rag_documents"
 
     # Application
     app_host: str = "0.0.0.0"

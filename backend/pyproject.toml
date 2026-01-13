@@ -1,7 +1,7 @@
 [project]
 name = "rag-project"
 version = "0.1.0"
-description = "RAG project using LangChain, Qdrant, and OpenAI"
+description = "RAG project using LangChain, Milvus, and OpenAI"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
@@ -11,7 +11,7 @@ dependencies = [
     "langchain>=0.1.4",
     "langchain-openai>=0.0.5",
     "langchain-community>=0.0.16",
-    "qdrant-client>=1.7.3",
+    "pymilvus>=2.3.5",
     "openai>=1.10.0",
     "tiktoken>=0.5.2",
     "python-multipart>=0.0.6",
